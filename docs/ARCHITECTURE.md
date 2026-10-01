@@ -258,5 +258,13 @@ Both scripts prompt for the postgres password unless `$env:PGPASSWORD` is alread
 ### Production readiness notes (not yet done — flagged for awareness)
 
 - `spring.jpa.hibernate.ddl-auto` is currently `update`, which is convenient for iterative development but risky for production schema changes. Before a real production deploy, switch to a migration tool (Flyway or Liquibase) with `ddl-auto: validate`.
-- No automated test suite exists yet (`src/test/` is empty) — all verification so far has been live manual/scripted testing against a running instance, not repeatable unit/integration tests.
 - CORS is wide open to any localhost port for local development convenience; lock this down to the actual deployed frontend origin(s) before going live.
+
+## 10. Automated Testing
+
+`backend/src/test/java/com/flowershop/` has a JUnit 5 suite covering the three entities with full CRUD REST APIs (Category, Flower, Review) — 76 tests, run with `mvn test` from `backend/`, no live database or other running service required:
+
+- **Service-layer unit tests** (`service/*ServiceTest.java`) — Mockito, mocked repositories, no Spring context. Exercise create/read/update/delete plus the business-rule failure paths (duplicate category name, category delete blocked while flowers reference it, unknown category on flower create/update, review-before-delivery, duplicate review, editing another customer's review).
+- **Controller-layer slice tests** (`controller/*ControllerTest.java`) — `@WebMvcTest` + MockMvc, with the real `SecurityConfig` imported so `@PreAuthorize` role checks actually run, and `@WithMockUser` driving authentication. Exercise role-gated endpoints (right role succeeds, wrong role/anonymous gets 403) and Bean Validation rejections (blank name, negative price, etc.).
+
+This is the white-box counterpart to [`postman/flower-shop.postman_collection.json`](../postman/flower-shop.postman_collection.json) (black-box, against a live server) — both suites cover the same business rules, from different angles, and both pass cleanly.

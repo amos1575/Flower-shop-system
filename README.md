@@ -79,6 +79,7 @@ Open the URL it prints (`http://localhost:5173`).
 | Task | Command |
 |---|---|
 | Run backend | `cd backend && mvn spring-boot:run` |
+| Run backend tests | `cd backend && mvn test` (76 tests, no DB/broker needed) |
 | Run frontend (dev) | `cd frontend-react && npm run dev` |
 | Build backend jar | `cd backend && mvn clean package -DskipTests` |
 | Run the built jar | `java -jar backend/target/flower-shop-backend-0.1.0-SNAPSHOT.jar` |
