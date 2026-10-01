@@ -6,6 +6,7 @@ import com.flowershop.dto.OrderResponse;
 import com.flowershop.entity.*;
 import com.flowershop.exception.ApiException;
 import com.flowershop.exception.ResourceNotFoundException;
+import com.flowershop.messaging.NotificationPublisher;
 import com.flowershop.repository.DeliveryRepository;
 import com.flowershop.repository.FlowerRepository;
 import com.flowershop.repository.OrderRepository;
@@ -30,6 +31,7 @@ public class OrderService {
     private final FlowerRepository flowerRepository;
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
+    private final NotificationPublisher notificationPublisher;
 
     @Transactional
     public OrderResponse createOrder(String customerEmail, CreateOrderRequest request) {
@@ -83,6 +85,8 @@ public class OrderService {
                 .build();
         deliveryRepository.save(delivery);
 
+        notificationPublisher.publishOrderPlaced(savedOrder.getId(), customer.getEmail(), customer.getFullName());
+
         return OrderResponse.from(savedOrder);
     }
 
@@ -111,7 +115,11 @@ public class OrderService {
     public OrderResponse updateStatus(Long orderId, OrderStatus status) {
         Order order = findOrThrow(orderId);
         order.setStatus(status);
-        return OrderResponse.from(orderRepository.save(order));
+        Order saved = orderRepository.save(order);
+
+        notificationPublisher.publishOrderStatusChanged(orderId, order.getCustomer().getEmail(), status.name());
+
+        return OrderResponse.from(saved);
     }
 
     private Order findOrThrow(Long orderId) {
