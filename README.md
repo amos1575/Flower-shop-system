@@ -46,6 +46,9 @@ The backend does **not** create the database itself — only the tables inside i
 | `JWT_SECRET` | Signing key for auth tokens — must change before any real deployment |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Seeded default admin account (created once on first boot if that email doesn't already exist) |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe API credentials — payment flows won't work until these are real keys |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 2.0 credentials for "Sign in with Google" — see §10 of ARCHITECTURE.md; without these, password login still works fine |
+| `MONGO_URI` | MongoDB connection string for the order audit log (defaults to `mongodb://localhost:27017/flowershop_audit`) — the app runs fine without Mongo up, it just won't record/show the audit trail |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` / `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | RabbitMQ connection for order notifications (defaults to `localhost:5672`, guest/guest) — the app runs fine without RabbitMQ up, it just won't publish notification events |
 
 ### 3. Run the backend
 

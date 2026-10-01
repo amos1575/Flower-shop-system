@@ -258,5 +258,28 @@ Both scripts prompt for the postgres password unless `$env:PGPASSWORD` is alread
 ### Production readiness notes (not yet done — flagged for awareness)
 
 - `spring.jpa.hibernate.ddl-auto` is currently `update`, which is convenient for iterative development but risky for production schema changes. Before a real production deploy, switch to a migration tool (Flyway or Liquibase) with `ddl-auto: validate`.
-- No automated test suite exists yet (`src/test/` is empty) — all verification so far has been live manual/scripted testing against a running instance, not repeatable unit/integration tests.
 - CORS is wide open to any localhost port for local development convenience; lock this down to the actual deployed frontend origin(s) before going live.
+
+## 10. OAuth2: Sign in with Google
+
+Customers can authenticate via Google instead of (or in addition to) an email/password account, using Spring Security's OAuth2 client support rather than a hand-rolled OAuth2 implementation.
+
+**Flow:**
+1. The customer clicks "Continue with Google" on `/customer/login`, which is a plain link to `GET /oauth2/authorization/google` on the backend (not a fetch call — this has to be a real browser navigation, since Google's consent screen is a page the user interacts with).
+2. Spring Security redirects to Google; the user authenticates/consents there.
+3. Google redirects back to `/login/oauth2/code/google` (Spring Security's default callback path), which `SecurityConfig`'s `oauth2Login()` handles.
+4. `OAuth2LoginSuccessHandler` finds the user by the Google account's email (or provisions a new `CUSTOMER` row if it's their first time), mints the same JWT `AuthService` issues for password login, and redirects the browser to the frontend at `/customer/oauth2-callback?token=...`.
+5. The React app's `OAuthCallback` page reads the token, calls `AuthContext.completeOAuthLogin(token)` (fetches `GET /api/users/me` with it to get the profile, then stores the session exactly like a password login), and routes to the shop.
+
+This redirect-based hand-off (rather than returning JSON) is necessary because steps 2–4 are a sequence of top-level browser navigations through Google's own pages — there's no XHR response for the frontend to read a token from.
+
+**Account linking:** a Google sign-in is matched to an existing account purely by email. If someone already registered with a password using the same email Google reports, they'll be logged into that same account. A freshly Google-provisioned account gets a random (unguessable, unusable) password hash, since there's no password-reset flow yet to let them set a real one later — see `docs/REQUIREMENTS.md` scope notes.
+
+**Setup (required before this actually works):** register an OAuth 2.0 Client in [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Credentials → Create Credentials → OAuth client ID → Web application, with authorized redirect URI `http://localhost:8080/login/oauth2/code/google` for local dev. Set the resulting values as environment variables before starting the backend:
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 2.0 credentials from Google Cloud Console |
+| `OAUTH2_FRONTEND_REDIRECT_URI` | Where the backend sends the browser after minting the JWT (defaults to `http://localhost:5173/customer/oauth2-callback`, matching the Vite dev server) |
+
+Without real credentials, the app still boots fine (placeholder defaults, same pattern as Stripe) and `GET /oauth2/authorization/google` still correctly redirects to Google — it just won't complete a real login until genuine credentials are set.
