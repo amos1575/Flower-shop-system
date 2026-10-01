@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { GOOGLE_LOGIN_URL } from "../../api/client";
 import Alert from "../../components/Alert";
 import AuthSplit from "../../components/AuthSplit";
 
@@ -47,6 +48,8 @@ export default function CustomerLogin() {
                 </div>
                 <button type="submit" className="btn btn-primary">Login</button>
             </form>
+            <div className="auth-divider">or</div>
+            <a href={GOOGLE_LOGIN_URL} className="btn btn-secondary">Continue with Google</a>
             <p className="auth-footer-link">No account? <Link to="/customer/register">Register here</Link>.</p>
         </AuthSplit>
     );

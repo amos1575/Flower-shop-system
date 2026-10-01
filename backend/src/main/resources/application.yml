@@ -13,6 +13,14 @@ spring:
       hibernate:
         format_sql: true
     open-in-view: false
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:placeholder-client-id.apps.googleusercontent.com}
+            client-secret: ${GOOGLE_CLIENT_SECRET:placeholder-client-secret}
+            scope: openid,email,profile
 
 server:
   port: 8080
@@ -28,3 +36,5 @@ app:
     secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder_replace_me}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder_replace_me}
     currency: usd
+  oauth2:
+    frontend-redirect-uri: ${OAUTH2_FRONTEND_REDIRECT_URI:http://localhost:5173/customer/oauth2-callback}

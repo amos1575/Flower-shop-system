@@ -13,6 +13,7 @@ import CustomerRegister from "./pages/customer/Register";
 import CustomerProduct from "./pages/customer/Product";
 import CustomerCart from "./pages/customer/Cart";
 import CustomerOrders from "./pages/customer/Orders";
+import CustomerOAuthCallback from "./pages/customer/OAuthCallback";
 
 import AdminLogin from "./pages/admin/Login";
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -33,6 +34,7 @@ export default function App() {
 
             <Route path="/customer/login" element={<CustomerLogin />} />
             <Route path="/customer/register" element={<CustomerRegister />} />
+            <Route path="/customer/oauth2-callback" element={<CustomerOAuthCallback />} />
             <Route path="/customer" element={<CustomerLayout />}>
                 <Route index element={<CustomerShop />} />
                 <Route path="product/:id" element={<CustomerProduct />} />

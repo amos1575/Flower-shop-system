@@ -1,4 +1,7 @@
-const API_BASE_URL = "http://localhost:8080/api";
+const API_ORIGIN = "http://localhost:8080";
+const API_BASE_URL = `${API_ORIGIN}/api`;
+
+export const GOOGLE_LOGIN_URL = `${API_ORIGIN}/oauth2/authorization/google`;
 
 export function getToken() {
     return localStorage.getItem("jwt");
