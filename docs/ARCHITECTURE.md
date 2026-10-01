@@ -282,3 +282,30 @@ OrderService --publish--> flowershop.notifications (topic exchange)
 - **Resilience**: publishing is wrapped in a try/catch and only logged on failure. A RabbitMQ outage degrades to "no notification sent," never to a failed order. Verified live: order creation returns `201` and the order is fully persisted with RabbitMQ stopped; the failed publish attempt is logged as a warning.
 
 **Configuration:** `spring.rabbitmq.{host,port,username,password}`, overridable via `RABBITMQ_HOST` / `RABBITMQ_PORT` / `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` (defaults: `localhost:5672`, guest/guest — RabbitMQ's own out-of-the-box defaults). Run a local broker for development with, e.g., `docker run -d -p 5672:5672 -p 15672:15672 rabbitmq:3-management` (the management UI at `:15672` is useful for watching the exchange/queue while testing).
+## 10. Polyglot Persistence: MongoDB Order Audit Log
+
+Alongside the PostgreSQL schema above (the system of record for orders, inventory, users), order lifecycle events are also written to a MongoDB collection, `order_audit_logs`:
+
+```
+OrderAuditLog {
+  id: ObjectId
+  orderId: Long          (indexed, not a foreign key — Mongo doesn't enforce referential
+                           integrity against Postgres; the relationship is logical)
+  previousStatus: String | null
+  newStatus: String
+  changedByEmail: String
+  changedByRole: String
+  note: String | null
+  timestamp: LocalDateTime
+}
+```
+
+**Why a second store instead of another Postgres table:** this data is append-only, write-heavy relative to how often it's read, has no relationships to other entities that need enforcing, and its "schema" is really just a log line shape that doesn't need migrations as it evolves. That's the textbook case for choosing a document store over adding another relational table — polyglot persistence (using the right data store per workload) rather than a single one-size-fits-all database.
+
+**Where it's written:** `OrderService.createOrder` (on placement) and `OrderService.updateStatus` (on every status transition), via `OrderAuditLogRepository`.
+
+**Where it's read:** `GET /api/orders/{id}/audit-log` (ADMIN only).
+
+**Resilience:** both the write and the read path catch and log Mongo exceptions rather than propagating them — a MongoDB outage degrades to "no audit entry recorded" / "audit log temporarily unavailable," it never breaks order creation or status updates, which remain fully functional against Postgres alone. Verified live: the backend starts and serves orders normally with MongoDB stopped.
+
+**Configuration:** `spring.data.mongodb.uri`, overridable via the `MONGO_URI` environment variable (defaults to `mongodb://localhost:27017/flowershop_audit` for local dev — no auth, matching how the rest of this project's local-dev defaults work).

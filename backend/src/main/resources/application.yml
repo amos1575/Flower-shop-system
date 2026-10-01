@@ -21,6 +21,9 @@ spring:
     listener:
       simple:
         default-requeue-rejected: false
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/flowershop_audit}
 
 server:
   port: 8080

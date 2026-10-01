@@ -1,6 +1,8 @@
 package com.flowershop.service;
 
+import com.flowershop.document.OrderAuditLog;
 import com.flowershop.dto.CreateOrderRequest;
+import com.flowershop.dto.OrderAuditLogResponse;
 import com.flowershop.dto.OrderItemRequest;
 import com.flowershop.dto.OrderResponse;
 import com.flowershop.entity.*;
@@ -11,7 +13,9 @@ import com.flowershop.repository.DeliveryRepository;
 import com.flowershop.repository.FlowerRepository;
 import com.flowershop.repository.OrderRepository;
 import com.flowershop.repository.UserRepository;
+import com.flowershop.repository.mongo.OrderAuditLogRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -20,9 +24,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -32,6 +39,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
     private final NotificationPublisher notificationPublisher;
+    private final OrderAuditLogRepository orderAuditLogRepository;
 
     @Transactional
     public OrderResponse createOrder(String customerEmail, CreateOrderRequest request) {
@@ -86,6 +94,8 @@ public class OrderService {
         deliveryRepository.save(delivery);
 
         notificationPublisher.publishOrderPlaced(savedOrder.getId(), customer.getEmail(), customer.getFullName());
+        logAuditEvent(savedOrder.getId(), null, OrderStatus.PENDING.name(),
+                customer.getEmail(), customer.getRole().name(), "Order placed");
 
         return OrderResponse.from(savedOrder);
     }
@@ -112,14 +122,53 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderResponse updateStatus(Long orderId, OrderStatus status) {
+    public OrderResponse updateStatus(Long orderId, OrderStatus status, String requesterEmail) {
         Order order = findOrThrow(orderId);
+        OrderStatus previousStatus = order.getStatus();
         order.setStatus(status);
         Order saved = orderRepository.save(order);
 
         notificationPublisher.publishOrderStatusChanged(orderId, order.getCustomer().getEmail(), status.name());
 
         return OrderResponse.from(saved);
+        User requester = userRepository.findByEmail(requesterEmail).orElse(null);
+        logAuditEvent(orderId, previousStatus.name(), status.name(),
+                requesterEmail, requester != null ? requester.getRole().name() : "ADMIN", null);
+
+        return OrderResponse.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderAuditLogResponse> getAuditLog(Long orderId) {
+        findOrThrow(orderId);
+        try {
+            return orderAuditLogRepository.findByOrderIdOrderByTimestampDesc(orderId).stream()
+                    .map(OrderAuditLogResponse::from)
+                    .toList();
+        } catch (RuntimeException e) {
+            log.warn("Could not read order audit log for order {} from MongoDB: {}", orderId, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // Best-effort: the audit trail lives in MongoDB, a separate store from the order
+    // data itself, so an outage there must never fail the (Postgres-backed) order
+    // transaction it's describing.
+    private void logAuditEvent(Long orderId, String previousStatus, String newStatus,
+                                String changedByEmail, String changedByRole, String note) {
+        try {
+            orderAuditLogRepository.save(OrderAuditLog.builder()
+                    .orderId(orderId)
+                    .previousStatus(previousStatus)
+                    .newStatus(newStatus)
+                    .changedByEmail(changedByEmail)
+                    .changedByRole(changedByRole)
+                    .note(note)
+                    .timestamp(LocalDateTime.now())
+                    .build());
+        } catch (RuntimeException e) {
+            log.warn("Could not write order audit log for order {} to MongoDB: {}", orderId, e.getMessage());
+        }
     }
 
     private Order findOrThrow(Long orderId) {
