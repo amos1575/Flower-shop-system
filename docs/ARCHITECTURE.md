@@ -260,6 +260,28 @@ Both scripts prompt for the postgres password unless `$env:PGPASSWORD` is alread
 - `spring.jpa.hibernate.ddl-auto` is currently `update`, which is convenient for iterative development but risky for production schema changes. Before a real production deploy, switch to a migration tool (Flyway or Liquibase) with `ddl-auto: validate`.
 - CORS is wide open to any localhost port for local development convenience; lock this down to the actual deployed frontend origin(s) before going live.
 
+## 10. Asynchronous Notifications: RabbitMQ
+
+Order lifecycle events are published to RabbitMQ rather than sent synchronously from the request thread that handles the order:
+
+```
+OrderService --publish--> flowershop.notifications (topic exchange)
+                               |
+                               | routing key: notification.order.placed
+                               | routing key: notification.order.status-changed
+                               v
+                   flowershop.notifications.email (queue)
+                               |
+                               v
+                   NotificationListener --> NotificationSender
+```
+
+- **Producer**: `OrderService` calls `NotificationPublisher` on order placement and on every status change (same two hook points as the MongoDB audit log in section 9 above — these are two independent consumers of the same two events, which is exactly the kind of fan-out a message broker is for).
+- **Consumer**: `NotificationListener` (`@RabbitListener`) picks events off the queue and hands them to `NotificationSender`.
+- **Delivery channel**: `NotificationSender` currently *simulates* delivery — it logs what would be sent rather than calling a real email/SMS provider. This mirrors how this project already ships Stripe with placeholder test keys (`STRIPE_SECRET_KEY` etc.): the integration is real and wired end-to-end, only the final "call a paid third-party API" step is stubbed. Swapping in a real `JavaMailSender` (SMTP) or an SMS gateway (e.g. Twilio) is a drop-in change inside `NotificationSender` alone — nothing else in the flow needs to change.
+- **Resilience**: publishing is wrapped in a try/catch and only logged on failure. A RabbitMQ outage degrades to "no notification sent," never to a failed order. Verified live: order creation returns `201` and the order is fully persisted with RabbitMQ stopped; the failed publish attempt is logged as a warning.
+
+**Configuration:** `spring.rabbitmq.{host,port,username,password}`, overridable via `RABBITMQ_HOST` / `RABBITMQ_PORT` / `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` (defaults: `localhost:5672`, guest/guest — RabbitMQ's own out-of-the-box defaults). Run a local broker for development with, e.g., `docker run -d -p 5672:5672 -p 15672:15672 rabbitmq:3-management` (the management UI at `:15672` is useful for watching the exchange/queue while testing).
 ## 10. Polyglot Persistence: MongoDB Order Audit Log
 
 Alongside the PostgreSQL schema above (the system of record for orders, inventory, users), order lifecycle events are also written to a MongoDB collection, `order_audit_logs`:

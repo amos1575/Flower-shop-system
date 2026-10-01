@@ -8,6 +8,7 @@ import com.flowershop.dto.OrderResponse;
 import com.flowershop.entity.*;
 import com.flowershop.exception.ApiException;
 import com.flowershop.exception.ResourceNotFoundException;
+import com.flowershop.messaging.NotificationPublisher;
 import com.flowershop.repository.DeliveryRepository;
 import com.flowershop.repository.FlowerRepository;
 import com.flowershop.repository.OrderRepository;
@@ -37,6 +38,7 @@ public class OrderService {
     private final FlowerRepository flowerRepository;
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
+    private final NotificationPublisher notificationPublisher;
     private final OrderAuditLogRepository orderAuditLogRepository;
 
     @Transactional
@@ -91,6 +93,7 @@ public class OrderService {
                 .build();
         deliveryRepository.save(delivery);
 
+        notificationPublisher.publishOrderPlaced(savedOrder.getId(), customer.getEmail(), customer.getFullName());
         logAuditEvent(savedOrder.getId(), null, OrderStatus.PENDING.name(),
                 customer.getEmail(), customer.getRole().name(), "Order placed");
 
@@ -125,6 +128,9 @@ public class OrderService {
         order.setStatus(status);
         Order saved = orderRepository.save(order);
 
+        notificationPublisher.publishOrderStatusChanged(orderId, order.getCustomer().getEmail(), status.name());
+
+        return OrderResponse.from(saved);
         User requester = userRepository.findByEmail(requesterEmail).orElse(null);
         logAuditEvent(orderId, previousStatus.name(), status.name(),
                 requesterEmail, requester != null ? requester.getRole().name() : "ADMIN", null);
