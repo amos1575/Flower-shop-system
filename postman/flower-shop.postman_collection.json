@@ -1,0 +1,527 @@
+{
+  "info": {
+    "name": "Flower Shop — CRUD & Business Validation",
+    "description": "Exercises full CRUD (Create/Read/Update/Delete) for three entities — Categories, Flowers, and Reviews — plus the business-logic validation rules enforced in the service layer (duplicate names, stock/availability checks, the delivered-order gate on reviews, ownership checks, Bean Validation on request bodies). Run the whole collection top-to-bottom with the Collection Runner against a freshly-started backend; each folder is ordered so later requests depend on IDs captured from earlier ones via collection variables.\n\nPrerequisite: backend running at the `baseUrl` below (default matches `mvn spring-boot:run` locally) with the default seeded admin account.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api" },
+    { "key": "adminEmail", "value": "admin@flowershop.local" },
+    { "key": "adminPassword", "value": "ChangeMe123!" },
+    { "key": "customerToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "categoryId", "value": "" },
+    { "key": "categoryToDeleteId", "value": "" },
+    { "key": "categoryName", "value": "" },
+    { "key": "flowerId", "value": "" },
+    { "key": "flowerToDeleteId", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "reviewId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Register Customer",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('returns a JWT', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+            "pm.collectionVariables.set('customerToken', body.token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"fullName\": \"Postman Test Customer\", \"email\": \"postman.customer.{{$timestamp}}@example.com\", \"password\": \"TestPass123!\", \"phone\": \"0788123456\", \"address\": \"KG 123 St, Kigali\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Login Admin (seeded)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('role is ADMIN', () => pm.expect(body.role).to.eql('ADMIN'));",
+            "pm.collectionVariables.set('adminToken', body.token);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\": \"{{adminEmail}}\", \"password\": \"{{adminPassword}}\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "[Negative] Login Wrong Password",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\": \"{{adminEmail}}\", \"password\": \"WrongPassword!\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Categories (Entity 1 — full CRUD)",
+      "item": [
+        {
+          "name": "Create Category",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.collectionVariables.set('categoryId', body.id);",
+            "pm.collectionVariables.set('categoryName', body.name);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\": \"Postman Test Category {{$timestamp}}\", \"description\": \"Created by the CRUD test collection\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        },
+        {
+          "name": "Create Category To Delete",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('categoryToDeleteId', pm.response.json().id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\": \"Postman Disposable Category {{$timestamp}}\", \"description\": \"Exists only to be deleted\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        },
+        {
+          "name": "Get All Categories",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('is an array containing the new category', () => {",
+            "  const body = pm.response.json();",
+            "  pm.expect(body).to.be.an('array');",
+            "  pm.expect(body.some(c => c.id === pm.collectionVariables.get('categoryId'))).to.be.true;",
+            "});"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        },
+        {
+          "name": "Get Category By Id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('name matches', () => pm.expect(pm.response.json().name).to.eql(pm.collectionVariables.get('categoryName')));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryId}}"] }
+          }
+        },
+        {
+          "name": "Update Category",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('name was updated', () => pm.expect(body.name).to.include('(Updated)'));",
+            "pm.collectionVariables.set('categoryName', body.name);"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\": \"{{categoryName}} (Updated)\", \"description\": \"Updated via the CRUD test collection\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryId}}"] }
+          }
+        },
+        {
+          "name": "[Negative] Duplicate Category Name Rejected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\": \"{{categoryName}}\", \"description\": \"Should collide with the existing name\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        },
+        {
+          "name": "[Negative] Missing Category Name Rejected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+            "pm.test('field error on name', () => pm.expect(pm.response.json().fieldErrors).to.have.property('name'));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"description\": \"No name provided — should fail Bean Validation\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        },
+        {
+          "name": "Delete Category",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+          ] } }],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryToDeleteId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryToDeleteId}}"] }
+          }
+        },
+        {
+          "name": "[Negative] Get Deleted Category Returns 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/categories/{{categoryToDeleteId}}", "host": ["{{baseUrl}}"], "path": ["categories", "{{categoryToDeleteId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Flowers (Entity 2 — full CRUD)",
+      "item": [
+        {
+          "name": "Create Flower",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.collectionVariables.set('flowerId', body.id);",
+            "pm.collectionVariables.set('flowerName', body.name);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"categoryId\": {{categoryId}}, \"name\": \"Postman Test Rose {{$timestamp}}\", \"description\": \"Created by the CRUD test collection\", \"price\": 19.99, \"stockQuantity\": 50, \"imageUrl\": \"https://placehold.co/400x300?text=Rose\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers", "host": ["{{baseUrl}}"], "path": ["flowers"] }
+          }
+        },
+        {
+          "name": "Create Flower To Delete",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('flowerToDeleteId', pm.response.json().id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"categoryId\": {{categoryId}}, \"name\": \"Postman Disposable Flower {{$timestamp}}\", \"description\": \"Exists only to be deleted\", \"price\": 5.5, \"stockQuantity\": 5}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers", "host": ["{{baseUrl}}"], "path": ["flowers"] }
+          }
+        },
+        {
+          "name": "Get All Flowers (public)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('page has content', () => pm.expect(pm.response.json().content).to.be.an('array'));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flowers?size=50", "host": ["{{baseUrl}}"], "path": ["flowers"], "query": [{ "key": "size", "value": "50" }] }
+          }
+        },
+        {
+          "name": "Get Flower By Id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('name matches', () => pm.expect(pm.response.json().name).to.eql(pm.collectionVariables.get('flowerName')));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}"] }
+          }
+        },
+        {
+          "name": "Update Flower",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('price was updated', () => pm.expect(body.price).to.eql(24.99));",
+            "pm.collectionVariables.set('flowerName', body.name);"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"categoryId\": {{categoryId}}, \"name\": \"{{flowerName}} (Updated)\", \"description\": \"Updated via the CRUD test collection\", \"price\": 24.99, \"stockQuantity\": 45, \"imageUrl\": \"https://placehold.co/400x300?text=Rose\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}"] }
+          }
+        },
+        {
+          "name": "Update Flower Stock",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('stock quantity updated', () => pm.expect(pm.response.json().stockQuantity).to.eql(40));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"stockQuantity\": 40}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/stock", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "stock"] }
+          }
+        },
+        {
+          "name": "[Negative] Negative Price Rejected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"categoryId\": {{categoryId}}, \"name\": \"Invalid Flower\", \"price\": -5, \"stockQuantity\": 10}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers", "host": ["{{baseUrl}}"], "path": ["flowers"] }
+          }
+        },
+        {
+          "name": "[Negative] Unknown Category Rejected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"categoryId\": 999999999, \"name\": \"Orphan Flower\", \"price\": 9.99, \"stockQuantity\": 10}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers", "host": ["{{baseUrl}}"], "path": ["flowers"] }
+          }
+        },
+        {
+          "name": "Delete Flower (soft delete)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+          ] } }],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerToDeleteId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerToDeleteId}}"] }
+          }
+        },
+        {
+          "name": "Verify Flower Deactivated",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('active is false', () => pm.expect(pm.response.json().active).to.eql(false));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerToDeleteId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerToDeleteId}}"] }
+          }
+        },
+        {
+          "name": "Reactivate Flower",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('active is true again', () => pm.expect(pm.response.json().active).to.eql(true));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerToDeleteId}}/reactivate", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerToDeleteId}}", "reactivate"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Orders (supports the Review business rule below)",
+      "item": [
+        {
+          "name": "Create Order",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('status is PENDING', () => pm.expect(body.status).to.eql('PENDING'));",
+            "pm.collectionVariables.set('orderId', body.id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"deliveryAddress\": \"KG 456 St, Kigali\", \"items\": [{\"flowerId\": {{flowerId}}, \"quantity\": 2}]}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] }
+          }
+        },
+        {
+          "name": "[Negative] Review Blocked Before Delivery",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('403 Forbidden — no delivered order yet', () => pm.response.to.have.status(403));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"rating\": 5, \"comment\": \"Trying to review before delivery — should be rejected\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews"] }
+          }
+        },
+        {
+          "name": "[Negative] Order Rejected — Insufficient Stock",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"deliveryAddress\": \"KG 456 St, Kigali\", \"items\": [{\"flowerId\": {{flowerId}}, \"quantity\": 999999}]}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] }
+          }
+        },
+        {
+          "name": "Admin: Confirm Order",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('status is CONFIRMED', () => pm.expect(pm.response.json().status).to.eql('CONFIRMED'));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"status\": \"CONFIRMED\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["orders", "{{orderId}}", "status"] }
+          }
+        },
+        {
+          "name": "Admin: Process Order",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('status is PROCESSING', () => pm.expect(pm.response.json().status).to.eql('PROCESSING'));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"status\": \"PROCESSING\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["orders", "{{orderId}}", "status"] }
+          }
+        },
+        {
+          "name": "Admin: Ship Order",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('status is SHIPPED', () => pm.expect(pm.response.json().status).to.eql('SHIPPED'));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"status\": \"SHIPPED\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["orders", "{{orderId}}", "status"] }
+          }
+        },
+        {
+          "name": "Admin: Deliver Order",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('status is DELIVERED', () => pm.expect(pm.response.json().status).to.eql('DELIVERED'));"
+          ] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"status\": \"DELIVERED\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["orders", "{{orderId}}", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Reviews (Entity 3 — full CRUD)",
+      "item": [
+        {
+          "name": "Create Review",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('reviewId', pm.response.json().id);"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"rating\": 5, \"comment\": \"Beautiful bouquet, exactly as pictured!\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews"] }
+          }
+        },
+        {
+          "name": "[Negative] Duplicate Review Rejected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));"
+          ] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"rating\": 3, \"comment\": \"Trying to review the same flower twice\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews"] }
+          }
+        },
+        {
+          "name": "Get Reviews For Flower (public)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('review count is at least 1', () => pm.expect(pm.response.json().reviewCount).to.be.at.least(1));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews"] }
+          }
+        },
+        {
+          "name": "Update Review",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('rating was updated', () => pm.expect(pm.response.json().rating).to.eql(4));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"rating\": 4, \"comment\": \"Updating my review: still lovely, lasted a full week.\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews/{{reviewId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews", "{{reviewId}}"] }
+          }
+        },
+        {
+          "name": "[Negative] Invalid Rating Rejected",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"rating\": 6, \"comment\": \"Rating out of range — should fail Bean Validation\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews/{{reviewId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews", "{{reviewId}}"] }
+          }
+        },
+        {
+          "name": "[Negative] Another Customer Cannot Edit This Review",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+          ] } }],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"rating\": 1, \"comment\": \"An admin token is not this review's owner\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews/{{reviewId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews", "{{reviewId}}"] }
+          }
+        },
+        {
+          "name": "Delete Review",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+          ] } }],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews/{{reviewId}}", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews", "{{reviewId}}"] }
+          }
+        },
+        {
+          "name": "Get Reviews For Flower After Delete",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('review count back to 0', () => pm.expect(pm.response.json().reviewCount).to.eql(0));"
+          ] } }],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flowers/{{flowerId}}/reviews", "host": ["{{baseUrl}}"], "path": ["flowers", "{{flowerId}}", "reviews"] }
+          }
+        }
+      ]
+    }
+  ]
+}

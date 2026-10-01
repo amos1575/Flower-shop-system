@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: flower-shop-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/flowershop
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-secret-change-me-please-make-this-long-and-random}
+    expiration-ms: 86400000
+  admin:
+    email: ${ADMIN_EMAIL:admin@flowershop.local}
+    password: ${ADMIN_PASSWORD:ChangeMe123!}
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY:sk_test_placeholder_replace_me}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_placeholder_replace_me}
+    currency: usd

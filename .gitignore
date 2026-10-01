@@ -1,0 +1,17 @@
+# Build output
+backend/target/
+
+# Database backups (contain real data — never commit)
+backups/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
