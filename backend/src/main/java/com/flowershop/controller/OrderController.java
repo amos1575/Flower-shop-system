@@ -1,6 +1,7 @@
 package com.flowershop.controller;
 
 import com.flowershop.dto.CreateOrderRequest;
+import com.flowershop.dto.OrderAuditLogResponse;
 import com.flowershop.dto.OrderResponse;
 import com.flowershop.dto.OrderStatusUpdateRequest;
 import com.flowershop.service.OrderService;
@@ -14,6 +15,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -54,7 +57,14 @@ public class OrderController {
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<OrderResponse> updateStatus(@PathVariable Long id,
-                                                       @Valid @RequestBody OrderStatusUpdateRequest request) {
-        return ResponseEntity.ok(orderService.updateStatus(id, request.getStatus()));
+                                                       @Valid @RequestBody OrderStatusUpdateRequest request,
+                                                       Authentication authentication) {
+        return ResponseEntity.ok(orderService.updateStatus(id, request.getStatus(), authentication.getName()));
+    }
+
+    @GetMapping("/{id}/audit-log")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<OrderAuditLogResponse>> getAuditLog(@PathVariable Long id) {
+        return ResponseEntity.ok(orderService.getAuditLog(id));
     }
 }
