@@ -258,5 +258,32 @@ Both scripts prompt for the postgres password unless `$env:PGPASSWORD` is alread
 ### Production readiness notes (not yet done — flagged for awareness)
 
 - `spring.jpa.hibernate.ddl-auto` is currently `update`, which is convenient for iterative development but risky for production schema changes. Before a real production deploy, switch to a migration tool (Flyway or Liquibase) with `ddl-auto: validate`.
-- No automated test suite exists yet (`src/test/` is empty) — all verification so far has been live manual/scripted testing against a running instance, not repeatable unit/integration tests.
 - CORS is wide open to any localhost port for local development convenience; lock this down to the actual deployed frontend origin(s) before going live.
+
+## 10. Polyglot Persistence: MongoDB Order Audit Log
+
+Alongside the PostgreSQL schema above (the system of record for orders, inventory, users), order lifecycle events are also written to a MongoDB collection, `order_audit_logs`:
+
+```
+OrderAuditLog {
+  id: ObjectId
+  orderId: Long          (indexed, not a foreign key — Mongo doesn't enforce referential
+                           integrity against Postgres; the relationship is logical)
+  previousStatus: String | null
+  newStatus: String
+  changedByEmail: String
+  changedByRole: String
+  note: String | null
+  timestamp: LocalDateTime
+}
+```
+
+**Why a second store instead of another Postgres table:** this data is append-only, write-heavy relative to how often it's read, has no relationships to other entities that need enforcing, and its "schema" is really just a log line shape that doesn't need migrations as it evolves. That's the textbook case for choosing a document store over adding another relational table — polyglot persistence (using the right data store per workload) rather than a single one-size-fits-all database.
+
+**Where it's written:** `OrderService.createOrder` (on placement) and `OrderService.updateStatus` (on every status transition), via `OrderAuditLogRepository`.
+
+**Where it's read:** `GET /api/orders/{id}/audit-log` (ADMIN only).
+
+**Resilience:** both the write and the read path catch and log Mongo exceptions rather than propagating them — a MongoDB outage degrades to "no audit entry recorded" / "audit log temporarily unavailable," it never breaks order creation or status updates, which remain fully functional against Postgres alone. Verified live: the backend starts and serves orders normally with MongoDB stopped.
+
+**Configuration:** `spring.data.mongodb.uri`, overridable via the `MONGO_URI` environment variable (defaults to `mongodb://localhost:27017/flowershop_audit` for local dev — no auth, matching how the rest of this project's local-dev defaults work).
